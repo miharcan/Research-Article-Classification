@@ -64,6 +64,8 @@ All embeddings are: Batch encoded + L2-normalized + Cached per dataset split
 - Gaussian Mixture Model (GMM)
 - HDBSCAN
 
+![Top Category Distribution](analysis/top_categories.png)
+
 Metrics used:
 - ARI (Adjusted Rand Index)
 - NMI (Normalized Mutual Information)
