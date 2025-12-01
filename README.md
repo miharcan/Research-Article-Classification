@@ -50,6 +50,8 @@ Methodology
 - Identification of missing fields
 - Histograms and top-N barplots saved in analysis/
 
+![Abstract Length Distribution](analysis/https://raw.githubusercontent.com/miharcan/Research-Article-Classification/refs/heads/main/analysis/distribution.png)
+
 2. Embedding models used:
 - MiniLM-L6-v2 (fast, strong baseline)
 - MPNet
