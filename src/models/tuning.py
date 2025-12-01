@@ -196,8 +196,8 @@ def run_hyperparameter_search(df_class):
     logger.info("\n=========== ALL TRIAL RESULTS ===========\n%s",
                 df.to_string(index=False))
 
-    # Save CSV
-    df.to_csv("optuna_trial_results.csv", index=False)
-    logger.info("Saved full Optuna results to optuna_trial_results.csv")
+    # # Save CSV
+    # df.to_csv("optuna_trial_results.csv", index=False)
+    # logger.info("Saved full Optuna results to optuna_trial_results.csv")
 
     return study
