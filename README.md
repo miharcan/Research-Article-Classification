@@ -52,33 +52,30 @@ Relevance: Supports inclusion of SciBERT/SPECTER embeddings in the clustering st
 🧪 Methodology
 1. Exploratory Data Analysis
 Performed full scan of arXiv metadata:
-Abstract length statistics
-Distribution of top-level categories
-Identification of missing fields
-Histograms and top-N barplots saved in analysis/
+- Abstract length statistics
+- Distribution of top-level categories
+- Identification of missing fields
+- Histograms and top-N barplots saved in analysis/
 
 2. Embedding Generation
 Embedding models used:
-MiniLM-L6-v2 (fast, strong baseline)
-MPNet
-SciBERT
-SPECTER
-All embeddings are:
-Batch encoded
-L2-normalized
-Cached per dataset split
+- MiniLM-L6-v2 (fast, strong baseline)
+- MPNet
+- SciBERT
+- SPECTER
+All embeddings are: Batch encoded + L2-normalized + Cached per dataset split
 
 3. Clustering Pipeline
 Algorithms tested:
-KMeans
-Gaussian Mixture Model (GMM)
-HDBSCAN
+- KMeans
+- Gaussian Mixture Model (GMM)
+- HDBSCAN
 
 Metrics used:
-ARI (Adjusted Rand Index)
-NMI (Normalized Mutual Information)
-Silhouette Score
-Noise Ratio (for HDBSCAN)
+- ARI (Adjusted Rand Index)
+- NMI (Normalized Mutual Information)
+- Silhouette Score
+- Noise Ratio (for HDBSCAN)
 
 
 The best clustering pipeline is selected by a composite score:
@@ -87,31 +84,31 @@ score = NMI + 0.5 * ARI + 0.5 * silhouette
 4. Classification Pipeline
 
 Transformer model candidates:
-BERT, DistilBERT, RoBERTa
-Labels = cluster IDs (pseudo-labels)
-Framework: PyTorch
-Search: Optuna
-Tracking & visual artifacts: MLflow
+- BERT, DistilBERT, RoBERTa
+- Labels = cluster IDs (pseudo-labels)
+- Framework: PyTorch
+- Search: Optuna
+- Tracking & visual artifacts: MLflow
 
 Metrics include:
-Accuracy
-F1 macro / weighted
-Precision / Recall
-Cohen’s Kappa
-Matthews Correlation Coefficient
-Top-3 Accuracy
-ROC-AUC (multiclass OVR)
+- Accuracy
+- F1 macro / weighted
+- Precision / Recall
+- Cohen’s Kappa
+- Matthews Correlation Coefficient
+- Top-3 Accuracy
+- ROC-AUC (multiclass OVR)
 
 
-📊 Results
-Below are the real results from running the full pipeline (2,000 abstracts total).
+Results
+-Below are the real results from running the full pipeline (2,000 abstracts total).
 1. Clustering Results
 Best number of clusters: K = 6
 
 Best pipeline:
-Embedding: MiniLM  
-Algorithm: KMeans  
-Score: 0.8618
+- Embedding: MiniLM  
+- Algorithm: KMeans  
+- Score: 0.8618
 
 Cluster Interpretability
 Cluster	Dominant Field
@@ -122,18 +119,16 @@ Cluster	Dominant Field
 4	Astrophysics
 5	Theoretical Physics (hep-th, gr-qc)
 
-This aligns extremely well with known arXiv category structure.
-
 2. Classification Results (Optuna Search)
 
 Best model discovered:
-distilbert-base-uncased
-lr = 4.62e-05
-batch = 16
-epochs = 4
+- distilbert-base-uncased
+- lr = 4.62e-05
+- batch = 16
+- epochs = 4
 
-Best accuracy: 0.82
-Metric	Result
+- Best accuracy: 0.82
+Metric  Result
 Accuracy	0.82
 F1 Macro	0.814
 F1 Weighted	0.819
@@ -142,9 +137,7 @@ MCC	0.781
 Top-3 Accuracy	0.97
 ROC-AUC (macro OVR)	0.967
 
-Even without true labels (clusters used as pseudo-labels), the classifier achieves high consistency with the cluster structure.
-
-🚀 How to Run
+How to Run
 1. Install dependencies
 pip install -r requirements.txt
 
@@ -162,26 +155,26 @@ python src/main.py
 
 
 Output:
-Logs → logs/
-EDA → analysis/
-Optuna search results → optuna_trial_results.csv
-MLflow artifacts → logged automatically
+- Logs → logs/
+- EDA → analysis/
+- Optuna search results → optuna_trial_results.csv
+- MLflow artifacts → logged automatically
 
-Scalability & Practical Considerations
-Embeddings and clustering scale linearly with dataset size.
-HDBSCAN is more expensive; KMeans remains the fastest option.
-DistilBERT provides a strong accuracy-speed balance.
-The modular pipeline allows substituting any component (embeddings, clustering, classifier).
+Scalability & Practical Considerations:
+- Embeddings and clustering scale linearly with dataset size.
+- HDBSCAN is more expensive; KMeans remains the fastest option.
+- DistilBERT provides a strong accuracy-speed balance.
+- The modular pipeline allows substituting any component (embeddings, clustering, classifier).
 
-Limitations
-Classification relies on pseudo-labels (cluster IDs), not true arXiv subjects.
-Stronger embeddings (e.g., SPECTER2) could further improve results.
-Dimensionality reduction (UMAP) is not yet integrated.
+Limitations:
+- Classification relies on pseudo-labels (cluster IDs), not true arXiv subjects.
+- Stronger embeddings (e.g., SPECTER2) could further improve results.
+- Dimensionality reduction (UMAP) is not yet integrated.
 
 
-Conclusion
+Conclusion: 
 
-This project demonstrates a research-driven, systematic approach to discovering latent scientific categories and training transformer models for classification. By combining:
+This is systematic approach to discovering latent scientific categories and training transformer models for classification. By combining:
 - Embedding-based clustering
 - Rigorous evaluation
 - Hyperparameter optimization
