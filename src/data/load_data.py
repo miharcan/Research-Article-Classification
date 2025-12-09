@@ -5,12 +5,57 @@
 from utils.config import (
     JSON_PATH,
     LOAD_N_CLUSTERING,
-    LOAD_N_CLASSIFIER
+    LOAD_N_CLASSIFIER,
+    TEXT_REPRESENTATION_CLUSTER,
+    TEXT_REPRESENTATION_CLASS
 )
 import json
 import re
 import pandas as pd
 from utils.logging_utils import logger
+from data.preprocess import extract_triples
+
+
+from utils.config import (
+    TEXT_REPRESENTATION_CLUSTER,
+    TEXT_REPRESENTATION_CLASS,
+)
+from utils.logging_utils import logger
+
+
+def _select_text_column(df, mode: str):
+    """Internal helper — picks correct column based on mode."""
+    logger.info(f"Using text representation: {mode}")
+
+    if mode == "abstract":
+        return df["clean"].tolist()
+
+    elif mode == "triples":
+        return df["triples"].apply(lambda x: " ; ".join([f"{s} {r} {o}" for (s,r,o) in x])
+                                   if isinstance(x, list) else str(x)
+                                  ).tolist()
+
+    elif mode == "abstract_triples":
+        return df["abstract_triples"].tolist()
+
+    elif mode == "hybrid":
+        # hybrid must be constructed in embeddings.py
+        return None  # handled in embedding code
+
+    else:
+        raise ValueError(f"Unknown text representation mode: {mode}")
+
+
+def select_cluster_texts(df):
+    """Text for clustering embeddings."""
+    return _select_text_column(df, TEXT_REPRESENTATION_CLUSTER)
+
+
+def select_class_texts(df):
+    """Text for classification / BERT fine-tuning."""
+    return _select_text_column(df, TEXT_REPRESENTATION_CLASS)
+
+
 
 def load_json_subset(path, limit):
     rows = []
@@ -40,6 +85,39 @@ def top_cat_from_categories(cat_str: str) -> str:
     first = parts[0]
     return first.split(".")[0]  # first.split(".")[0] to get cs.AI -> cs
 
+
+def build_augmented_text(abstract, triples, nodes=None, edges=None):
+    """
+    abstract: str
+    triples: list[(s, r, o)] or a preformatted string
+    nodes: list[str]
+    edges: list[(src, dst)]
+    """
+
+    # 1. ABSTRACT
+    text_blocks = [f"ABSTRACT:\n{abstract.strip()}"]
+
+    # 2. TRIPLES
+    if isinstance(triples, str):
+        triple_str = triples
+    else:
+        triple_str = " ; ".join([f"{s} {r} {o}" for (s, r, o) in triples])
+    text_blocks.append(f"KNOWLEDGE TRIPLES:\n{triple_str}")
+
+    # 3. NODES
+    if nodes:
+        node_str = ", ".join(nodes)
+        text_blocks.append(f"GRAPH NODES:\n{node_str}")
+
+    # 4. EDGES
+    if edges:
+        edge_str = " ; ".join([f"{src} -> {dst}" for (src, dst) in edges])
+        text_blocks.append(f"GRAPH EDGES:\n{edge_str}")
+
+    # Final combined text
+    return "\n\n".join(text_blocks)
+
+
 def prepare_datasets():
     """
     Load a random subset of the data, then split into:
@@ -55,6 +133,17 @@ def prepare_datasets():
     df_all = df_all.sample(frac=1.0, random_state=42).reset_index(drop=True)
 
     df_all["clean"] = df_all["abstract"].astype(str).apply(clean_text)
+    df_all["triples"] = df_all["abstract"].astype(str).apply(extract_triples)
+    df_all["abstract_triples"] = df_all.apply(
+        lambda row: build_augmented_text(
+            abstract=row["abstract"],
+            triples=row["triples"],        
+            nodes=row.get("nodes", None),  
+            edges=row.get("edges", None),
+        ),
+        axis=1
+    )
+
     df_all["top_category"] = df_all["categories"].astype(str).apply(top_cat_from_categories)
 
     df_cluster = df_all.iloc[:LOAD_N_CLUSTERING].reset_index(drop=True)

@@ -5,15 +5,15 @@ import numpy as np
 import pandas as pd
 from models.embeddings import get_embeddings
 from sklearn.cluster import KMeans
-from sklearn.metrics import (
-    silhouette_score, confusion_matrix, adjusted_rand_score, normalized_mutual_info_score, classification_report,
-    accuracy_score, f1_score, precision_score, recall_score, cohen_kappa_score, matthews_corrcoef, roc_auc_score,
-    top_k_accuracy_score)
+from sklearn.metrics import (silhouette_score, adjusted_rand_score, normalized_mutual_info_score)
 from sklearn.mixture import GaussianMixture
 import hdbscan
 from hdbscan import approximate_predict
 from utils.logging_utils import logger
 from utils.config import *
+# from data.load_data import select_texts
+from data.load_data import select_cluster_texts
+# from models.text_selection import select_texts_for_clustering
 
 
 def best_k_sweep(X, top_categories, k_range):
@@ -89,7 +89,7 @@ def run_hdbscan(X, y):
     """
     Sweep min_cluster_size and pick best based on:
       composite_score = nmi + 0.5*ari - noise_penalty
-    We treat HDBSCAN explicitly differently because silhouette is not well-defined with noise.
+    HDBSCAN explicitly differently because silhouette is not well-defined with noise.
     """
     best_row = None
     for m in [5, 10, 20, 30, 50, 75]:
@@ -123,31 +123,53 @@ def run_hdbscan(X, y):
 
     return best_row
 
-
 def compare_embeddings_and_clusterers(df_cluster):
     """
-    For each embedding model, run KMeans, GMM, HDBSCAN (with tuned K/min_cluster_size)
-    and collect ARI, NMI, silhouette, noise, etc.
+    For each embedding model:
+      - compute embeddings (abstract/triples/hybrid, depending on config)
+      - run KMeans, GMM, and HDBSCAN
+      - collect metrics
     """
-    texts = df_cluster["clean"].tolist()
-    y     = df_cluster["top_category"].tolist()
 
-    # base MiniLM embeddings only for K sweep
-    X_base = get_embeddings(texts, "MiniLM", subset_id="cluster")
-    k_range = range(2, min(df_cluster["top_category"].nunique(), 40) + 1, 2)
-    best_k_km, best_k_gmm = best_k_sweep(X_base, y, k_range)
+    texts = select_cluster_texts(df_cluster)
 
-    logger.info("Best K for KMeans: %s, GMM: %s", best_k_km, best_k_gmm)
+    y = df_cluster["top_category"].tolist()
+
+    if FORCE_K is not None:
+        best_k_km = best_k_gmm = FORCE_K
+        
+        logger.info(f"FORCE_K is set → Using K={FORCE_K} for all clusterers.")
+    else:
+        # ----------------------------
+        # 2. Automatic K selection
+        # ----------------------------
+        X_base = get_embeddings(df_cluster, "MiniLM", subset_id="cluster")
+        k_range = range(2, min(df_cluster["top_category"].nunique(), 40) + 1, 2)
+        best_k_km, best_k_gmm = best_k_sweep(X_base, y, k_range)
+        logger.info("Best K for KMeans: %s, GMM: %s", best_k_km, best_k_gmm)
 
     rows = []
-    for emb_name in EMBEDDING_MODELS.keys():
-        logger.info("==== Embedding: %s ====", emb_name)
-        X = get_embeddings(texts, emb_name, subset_id="cluster")
 
+    # -------- Step 2: Evaluate each embedding model --------
+    for emb_name in EMBEDDING_MODELS.keys():
+
+        logger.info(f"==== Embedding: {emb_name} ====")
+
+        X = get_embeddings(df_cluster, emb_name, subset_id="cluster")
+
+        # KMeans
         if "kmeans" in CLUSTER_METHODS and best_k_km is not None:
-            rows.append({**run_kmeans(X, y, best_k_km), "embedding": emb_name})
+            row = run_kmeans(X, y, best_k_km)
+            row["embedding"] = emb_name
+            rows.append(row)
+
+        # GMM
         if "gmm" in CLUSTER_METHODS and best_k_gmm is not None:
-            rows.append({**run_gmm(X, y, best_k_gmm), "embedding": emb_name})
+            row = run_gmm(X, y, best_k_gmm)
+            row["embedding"] = emb_name
+            rows.append(row)
+
+        # HDBSCAN
         if "hdbscan" in CLUSTER_METHODS:
             hdb_row = run_hdbscan(X, y)
             if hdb_row is not None:
@@ -155,8 +177,10 @@ def compare_embeddings_and_clusterers(df_cluster):
                 rows.append(hdb_row)
 
     df_results = pd.DataFrame(rows)
-    logger.info("Clustering comparison:\n%s", df_results.to_string(index=False))
+    logger.info("\nClustering comparison:\n%s", df_results.to_string(index=False))
+
     return df_results, best_k_km, best_k_gmm
+
 
 
 def select_best_pipeline(df_results, n_samples):
@@ -167,6 +191,11 @@ def select_best_pipeline(df_results, n_samples):
     Score = NMI + 0.5*ARI + 0.5*silhouette (for KMeans/GMM)
     For HDBSCAN: use 'composite' already computed.
     """
+    if FORCE_K is not None:
+        df_results = df_results[df_results["algorithm"] != "HDBSCAN"]
+        logger.info("FORCE_K set → Excluding HDBSCAN from selection (it has no fixed K).")
+
+
     rows = []
     for _, row in df_results.iterrows():
         if row["ari"] <= 0 or row["nmi"] <= 0:
@@ -194,35 +223,80 @@ def select_best_pipeline(df_results, n_samples):
 # CLUSTER ASSIGNMENT
 # -------------------------------------------------
 def fit_final_clusterer(df_cluster, best_pipeline):
-    texts = df_cluster["clean"].tolist()
-    X = get_embeddings(texts, best_pipeline["embedding"], subset_id="cluster")
+    """
+    Fit the final clusterer on df_cluster using the SAME text representation
+    that was used during the embedding sweep.
+    """
+    if FORCE_K is not None:
+        logger.info(f"Using manually forced K={FORCE_K} for clusterer training.")
 
+    # 1. Get the text representation used for clustering (abstract/triples/hybrid)
+    from models.text_selection import select_texts_for_clustering
+    texts = select_texts_for_clustering(df_cluster)
+
+    # 2. Produce embeddings using CLUSTER mode
+    X = get_embeddings(
+        df_cluster,
+        best_pipeline["embedding"],
+        subset_id="cluster_fit",
+        texts_override=texts
+    )
+
+    # 3. Fit clusterer
     alg = best_pipeline["algorithm"]
+
     if alg == "KMeans":
         k = int(best_pipeline["k"])
         model = KMeans(n_clusters=k, random_state=42).fit(X)
         labels = model.labels_
+
     elif alg == "GMM":
         k = int(best_pipeline["k"])
-        model = GaussianMixture(n_components=k, random_state=42, reg_covar=1e-5).fit(X)
+        model = GaussianMixture(
+            n_components=k,
+            random_state=42,
+            reg_covar=1e-5
+        ).fit(X)
         labels = model.predict(X)
+
     else:  # HDBSCAN
         mcs = int(best_pipeline["min_cluster_size"])
-        # IMPORTANT: prediction_data=True for approximate_predict
-        model = hdbscan.HDBSCAN(min_cluster_size=mcs, prediction_data=True).fit(X)
+        model = hdbscan.HDBSCAN(
+            min_cluster_size=mcs,
+            prediction_data=True
+        ).fit(X)
         labels = model.labels_
         labels = np.where(labels == -1, labels.max() + 1, labels)
 
     df_cluster["cluster_id"] = labels
-    logger.info("Cluster distribution on df_cluster: %s", df_cluster["cluster_id"].value_counts().to_dict())
+    logger.info(
+        "Cluster distribution on df_cluster: %s",
+        df_cluster["cluster_id"].value_counts().to_dict()
+    )
+
     return model
 
 
 def assign_clusters_to_class_set(df_class, best_pipeline, clusterer):
-    texts = df_class["clean"].tolist()
-    X = get_embeddings(texts, best_pipeline["embedding"], subset_id="class")
+    """
+    Embed df_class using the SAME text mode and SAME embedding model used for clustering.
+    """
 
+    # 1. Get texts using *CLUSTERING* representation, not classification.
+    from models.text_selection import select_texts_for_clustering
+    texts = select_texts_for_clustering(df_class)
+
+    # 2. Produce embeddings exactly matching clustering logic.
+    X = get_embeddings(
+        df_class,
+        best_pipeline["embedding"],
+        subset_id="cluster_assign",   # name doesn't matter, but must NOT be "class"
+        texts_override=texts          # force use of CLUSTERING text list
+    )
+
+    # 3. Predict cluster labels
     alg = best_pipeline["algorithm"]
+
     if alg == "HDBSCAN":
         labels, strengths = approximate_predict(clusterer, X)
         labels = np.where(labels == -1, labels.max() + 1, labels)

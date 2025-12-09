@@ -13,6 +13,9 @@ from sklearn.preprocessing import LabelEncoder
 from models.tuning import run_hyperparameter_search
 from models.evaluation import analyze_clusters
 from utils.logging_utils import logger, rebind_file_handler, log_path
+from models.text_selection import prepare_text_representations
+from models.text_selection import select_texts_for_classification
+
 
 if __name__ == "__main__":
     logger.info("Starting pipeline...")
@@ -20,8 +23,15 @@ if __name__ == "__main__":
     # 1) Data
     df_cluster, df_class = prepare_datasets()
 
+    df_cluster = prepare_text_representations(df_cluster, mode=TEXT_REPRESENTATION_CLUSTER)
+    df_class   = prepare_text_representations(df_class, mode=TEXT_REPRESENTATION_CLASS)
+
+    
+
     # 2) Embedding × clustering comparison
     compare_df, best_k_km, best_k_gmm = compare_embeddings_and_clusterers(df_cluster)
+
+    
 
     # 3) Select best pipeline
     best_pipeline = select_best_pipeline(compare_df, n_samples=len(df_cluster))
@@ -35,9 +45,22 @@ if __name__ == "__main__":
     # 6) Research-quality cluster analysis
     analyze_clusters(df_cluster, df_class)
 
+    # 6b) DROP clusters with too few samples (e.g. < 2) from df_class
+    vc = df_class["cluster_id"].value_counts()
+    valid_clusters = vc[vc >= 2].index
+    dropped = len(df_class) - len(df_class[df_class["cluster_id"].isin(valid_clusters)])
+    logger.info("Dropping %d samples from rare clusters (size < 2)", dropped)
+
+    df_class = df_class[df_class["cluster_id"].isin(valid_clusters)].reset_index(drop=True)
+
+    
+    
     # 7) Encode labels ONCE for Optuna
     le = LabelEncoder()
     df_class["cluster_id_enc"] = le.fit_transform(df_class["cluster_id"])
+
+    # print(df_class["cluster_id_enc"].value_counts())
+    # exit()
 
     # ---------------------------------------------------------
     # IMPORTANT: FIX LOGGING BREAKAGE CAUSED BY MLFLOW / OPTUNA
@@ -46,7 +69,6 @@ if __name__ == "__main__":
     rebind_file_handler(log_path) 
 
     # 8) Run Optuna search
-    # study = run_hyperparameter_search()
     study = run_hyperparameter_search(df_class)
     logger.info("Best hyperparameters: %s", study.best_trial.params)
 

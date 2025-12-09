@@ -17,7 +17,8 @@ from sklearn.metrics import confusion_matrix
 from models.classifier import ClusterDataset
 from models.evaluation import evaluate_predictions_full
 from utils.logging_utils import logger, rebind_file_handler, log_path
-from utils.config import DEVICE, CLASSIFICATION_CANDIDATES
+from utils.config import DEVICE, CLASSIFICATION_CANDIDATES, n_train
+from models.text_selection import select_texts_for_classification
 
 
 # =============================================================
@@ -93,16 +94,18 @@ def objective(trial, df_class):
     model_name = trial.suggest_categorical("model_name", CLASSIFICATION_CANDIDATES)
     lr         = trial.suggest_float("lr", 1e-6, 5e-5, log=True)
     batch_size = trial.suggest_categorical("batch", [8, 16, 32])
-    epochs     = trial.suggest_int("epochs", 1, 4)
+    epochs     = trial.suggest_int("epochs", 1, 8)
 
     # ---------------- Train/Val split ----------------
+    all_texts = select_texts_for_classification(df_class)
     train_texts, val_texts, y_train, y_val = train_test_split(
-        df_class["clean"].tolist(),
+        all_texts,
         df_class["cluster_id_enc"].tolist(),
+        stratify=df_class["cluster_id_enc"],
         test_size=0.2,
-        random_state=42,
-        stratify=df_class["cluster_id_enc"]
+        random_state=42
     )
+
 
     num_labels = df_class["cluster_id_enc"].nunique()
 
@@ -144,7 +147,7 @@ def objective(trial, df_class):
         # plt.close()
 
         # Save model
-        mlflow.pytorch.log_model(model, "model")
+        # mlflow.pytorch.log_model(model, "model")
 
     # Save metrics in trial attributes (for summary table)
     trial.set_user_attr("full_metrics", metrics)
@@ -169,7 +172,7 @@ def run_hyperparameter_search(df_class):
     def wrapped_objective(trial):
         return objective(trial, df_class)
 
-    study.optimize(wrapped_objective, n_trials=12, show_progress_bar=True)
+    study.optimize(wrapped_objective, n_trials=n_train, show_progress_bar=True)
 
     logger.info("=== BEST TRIAL PARAMETERS ===")
     logger.info(study.best_trial.params)
