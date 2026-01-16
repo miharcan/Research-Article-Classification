@@ -11,9 +11,7 @@ import hdbscan
 from hdbscan import approximate_predict
 from utils.logging_utils import logger
 from utils.config import *
-# from data.load_data import select_texts
 from data.load_data import select_cluster_texts
-# from models.text_selection import select_texts_for_clustering
 
 
 def best_k_sweep(X, top_categories, k_range):

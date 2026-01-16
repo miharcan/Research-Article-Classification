@@ -117,35 +117,8 @@ def extract_triples(t: str):
                 if subj and obj:
                     rel = tok.lemma_.lower()
                     kg.add_edge(subj, obj, relation=rel, sentence=sent.text.strip())
-    # Keep only the largest connected component to reduce noise
-    # if kg.number_of_nodes() > 0:
-    #     comps = list(nx.weakly_connected_components(kg))
-    #     if len(comps) > 1:
-    #         largest = max(comps, key=len)
-    #         rm = set(kg.nodes()) - set(largest)
-    #         kg.remove_nodes_from(rm)
-    # print(kg.nodes)
-    # print(kg.edges)
 
     edge_attrs = [(u, d.get("relation"), v, d.get("sentence")) for u, v, d in kg.edges(data=True)]
-    
-    ####V1
-    # simple_triples = [(u, rel, v) for u, rel, v, _ in edge_attrs]
-    # string = combine_graph_elements(kg.nodes, kg.edges, " ; ".join([f"{s} {r} {o}" for (s, r, o) in simple_triples]))
-    # print(string)
-
-    # formatted_triples = [format_triple_sci(t) for t in simple_triples]
-    # print("formated triples: ", formatted_triples)
-
-    # triple_block = " ".join(formatted_triples)
-    # print("triple block:" , triple_block)
-
-    # string = combine_graph_elements(
-    #     kg.nodes,
-    #     kg.edges,
-    #     triple_block
-    # )
-    # print(string)
 
     ###V2
     simple_triples = [(u, rel, v) for u, rel, v, _ in edge_attrs]

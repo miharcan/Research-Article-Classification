@@ -3,18 +3,6 @@
 # -------------------------------------------------
 import torch
 from torch.utils.data import Dataset
-# from torch import optim
-# from transformers import AutoTokenizer, AutoModelForSequenceClassification
-# import numpy as np
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import (
-#     accuracy_score, f1_score, precision_score, recall_score,
-#     classification_report
-# )
-# from sklearn.preprocessing import LabelEncoder
-
-# from utils.config import DEVICE
-# from utils.logging_utils import logger
 
 
 class ClusterDataset(Dataset):

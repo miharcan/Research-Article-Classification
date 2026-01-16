@@ -36,12 +36,6 @@ def prepare_text_representations(df, mode=None):
     if "graph_text" not in df:
         df["graph_text"] = [""] * len(df)
 
-    # df["hybrid"] = (
-    #     df["clean"] + " [SEP] " 
-    #     + df["triples_str"] + " [SEP] "
-    #     + df["graph_text"]
-    # )
-
     df["hybrid"] = (
         "ABSTRACT: " + df["clean"] 
         + " [SEP] TRIPLES: " + df["triples_str"] 
