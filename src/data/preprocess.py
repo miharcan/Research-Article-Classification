@@ -1,5 +1,5 @@
 import networkx as nx
-from utils.config import nlp
+from utils.config import get_nlp
 
 # small helper to build a short phrase for a token (compounds + token)
 def phrase_for_token(tok):
@@ -88,6 +88,7 @@ def extract_triples(t: str):
     kg = nx.DiGraph()
     if not t:
         return kg
+    nlp = get_nlp()
     doc = nlp(t)
     # add entities as nodes for clarity (if available)
     for ent in doc.ents:

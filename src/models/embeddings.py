@@ -3,8 +3,12 @@ import numpy as np
 from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 from sklearn.preprocessing import normalize
-from utils.config import *
-from utils.config import TEXT_REPRESENTATION_CLUSTER, TEXT_REPRESENTATION_CLASS
+from utils.config import (
+    DEVICE,
+    EMBEDDING_MODELS,
+    TEXT_REPRESENTATION_CLUSTER,
+    TEXT_REPRESENTATION_CLASS,
+)
 
 
 _embedding_cache = {}  # (subset_id, embedding_name) -> np.ndarray

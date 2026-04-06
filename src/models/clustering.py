@@ -5,12 +5,23 @@ import numpy as np
 import pandas as pd
 from models.embeddings import get_embeddings
 from sklearn.cluster import KMeans
-from sklearn.metrics import (silhouette_score, adjusted_rand_score, normalized_mutual_info_score)
+from sklearn.metrics import (
+    silhouette_score,
+    adjusted_rand_score,
+    normalized_mutual_info_score,
+    calinski_harabasz_score,
+    davies_bouldin_score,
+)
 from sklearn.mixture import GaussianMixture
 import hdbscan
 from hdbscan import approximate_predict
 from utils.logging_utils import logger
-from utils.config import *
+from utils.config import (
+    CLUSTER_METHODS,
+    CLUSTER_SELECTION_MODE,
+    EMBEDDING_MODELS,
+    FORCE_K,
+)
 from data.load_data import select_cluster_texts
 
 
@@ -24,16 +35,21 @@ def best_k_sweep(X, top_categories, k_range):
     }
 
     y = top_categories
+    label_aware = CLUSTER_SELECTION_MODE == "label_aware"
 
     for k in k_range:
         # KMeans
         try:
             km_labels = KMeans(n_clusters=k, random_state=42).fit_predict(X)
             sil = silhouette_score(X, km_labels)
-            ari = adjusted_rand_score(y, km_labels)
-            nmi = normalized_mutual_info_score(y, km_labels)
-            # composite
-            score = nmi + 0.5 * ari + 0.5 * sil
+            if label_aware:
+                ari = adjusted_rand_score(y, km_labels)
+                nmi = normalized_mutual_info_score(y, km_labels)
+                score = nmi + 0.5 * ari + 0.5 * sil
+            else:
+                ch = calinski_harabasz_score(X, km_labels)
+                db = davies_bouldin_score(X, km_labels)
+                score = sil + 0.01 * np.log1p(ch) - 0.05 * db
             if score > best["kmeans"]["score"]:
                 best["kmeans"] = {"k": k, "score": score}
         except Exception as e:
@@ -45,9 +61,14 @@ def best_k_sweep(X, top_categories, k_range):
                 n_components=k, random_state=42, reg_covar=1e-5
             ).fit_predict(X)
             sil = silhouette_score(X, gmm_labels)
-            ari = adjusted_rand_score(y, gmm_labels)
-            nmi = normalized_mutual_info_score(y, gmm_labels)
-            score = nmi + 0.5 * ari + 0.5 * sil
+            if label_aware:
+                ari = adjusted_rand_score(y, gmm_labels)
+                nmi = normalized_mutual_info_score(y, gmm_labels)
+                score = nmi + 0.5 * ari + 0.5 * sil
+            else:
+                ch = calinski_harabasz_score(X, gmm_labels)
+                db = davies_bouldin_score(X, gmm_labels)
+                score = sil + 0.01 * np.log1p(ch) - 0.05 * db
             if score > best["gmm"]["score"]:
                 best["gmm"] = {"k": k, "score": score}
         except Exception as e:
@@ -58,13 +79,15 @@ def best_k_sweep(X, top_categories, k_range):
 
 def run_kmeans(X, y, k):
     labels = KMeans(n_clusters=k, random_state=42).fit_predict(X)
+    ari = adjusted_rand_score(y, labels) if y is not None else None
+    nmi = normalized_mutual_info_score(y, labels) if y is not None else None
     return dict(
         algorithm="KMeans",
         k=k,
         clusters=len(set(labels)),
         noise=0,
-        ari=adjusted_rand_score(y, labels),
-        nmi=normalized_mutual_info_score(y, labels),
+        ari=ari,
+        nmi=nmi,
         silhouette=silhouette_score(X, labels),
     )
 
@@ -72,13 +95,15 @@ def run_kmeans(X, y, k):
 def run_gmm(X, y, k):
     mdl = GaussianMixture(n_components=k, random_state=42, reg_covar=1e-5)
     labels = mdl.fit_predict(X)
+    ari = adjusted_rand_score(y, labels) if y is not None else None
+    nmi = normalized_mutual_info_score(y, labels) if y is not None else None
     return dict(
         algorithm="GMM",
         k=k,
         clusters=len(set(labels)),
         noise=0,
-        ari=adjusted_rand_score(y, labels),
-        nmi=normalized_mutual_info_score(y, labels),
+        ari=ari,
+        nmi=nmi,
         silhouette=silhouette_score(X, labels),
     )
 
@@ -97,12 +122,18 @@ def run_hdbscan(X, y):
         if len(set(labels)) <= 1:
             continue
         safe = np.where(labels == -1, labels.max() + 1, labels)
-        ari = adjusted_rand_score(y, safe)
-        nmi = normalized_mutual_info_score(y, safe)
         noise_frac = noise / len(labels)
+        sil = silhouette_score(X, safe) if len(set(safe)) > 1 else None
 
-        # composite score: reward NMI/ARI, penalize noise
-        score = nmi + 0.5 * ari - 0.5 * noise_frac
+        if y is not None and CLUSTER_SELECTION_MODE == "label_aware":
+            ari = adjusted_rand_score(y, safe)
+            nmi = normalized_mutual_info_score(y, safe)
+            # composite score: reward NMI/ARI, penalize noise
+            score = nmi + 0.5 * ari - 0.5 * noise_frac
+        else:
+            ari = None
+            nmi = None
+            score = (sil if sil is not None else -1.0) - 0.5 * noise_frac
 
         row = dict(
             algorithm="HDBSCAN",
@@ -112,7 +143,7 @@ def run_hdbscan(X, y):
             noise_frac=noise_frac,
             ari=ari,
             nmi=nmi,
-            silhouette=None,
+            silhouette=sil,
             composite=score,
         )
 
@@ -131,7 +162,9 @@ def compare_embeddings_and_clusterers(df_cluster):
 
     texts = select_cluster_texts(df_cluster)
 
-    y = df_cluster["top_category"].tolist()
+    label_aware = CLUSTER_SELECTION_MODE == "label_aware"
+    y = df_cluster["top_category"].tolist() if label_aware else None
+    logger.info("Cluster selection mode: %s", CLUSTER_SELECTION_MODE)
 
     if FORCE_K is not None:
         best_k_km = best_k_gmm = FORCE_K
@@ -142,7 +175,8 @@ def compare_embeddings_and_clusterers(df_cluster):
         # 2. Automatic K selection
         # ----------------------------
         X_base = get_embeddings(df_cluster, "MiniLM", subset_id="cluster")
-        k_range = range(2, min(df_cluster["top_category"].nunique(), 40) + 1, 2)
+        k_upper = min(df_cluster["top_category"].nunique(), 40) if label_aware else 40
+        k_range = range(2, k_upper + 1, 2)
         best_k_km, best_k_gmm = best_k_sweep(X_base, y, k_range)
         logger.info("Best K for KMeans: %s, GMM: %s", best_k_km, best_k_gmm)
 
@@ -194,16 +228,29 @@ def select_best_pipeline(df_results, n_samples):
         logger.info("FORCE_K set → Excluding HDBSCAN from selection (it has no fixed K).")
 
 
+    label_aware = CLUSTER_SELECTION_MODE == "label_aware"
     rows = []
     for _, row in df_results.iterrows():
-        if row["ari"] <= 0 or row["nmi"] <= 0:
-            continue
+        if label_aware:
+            if row["ari"] is None or row["nmi"] is None:
+                continue
+            if row["ari"] <= 0 or row["nmi"] <= 0:
+                continue
 
         if row["algorithm"] in ["KMeans", "GMM"]:
             sil = row["silhouette"]
-            score = row["nmi"] + 0.5 * row["ari"] + 0.5 * (sil if pd.notna(sil) else 0.0)
+            if label_aware:
+                score = row["nmi"] + 0.5 * row["ari"] + 0.5 * (sil if pd.notna(sil) else 0.0)
+            else:
+                score = sil if pd.notna(sil) else -np.inf
         else:  # HDBSCAN
-            score = row.get("composite", row["nmi"] + 0.5 * row["ari"] - 0.5 * (row["noise"] / n_samples))
+            if label_aware:
+                score = row.get(
+                    "composite",
+                    row["nmi"] + 0.5 * row["ari"] - 0.5 * (row["noise"] / n_samples),
+                )
+            else:
+                score = row.get("composite", -np.inf)
 
         rows.append({**row.to_dict(), "score": score})
 

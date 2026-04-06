@@ -1,0 +1,14 @@
+json_path: /home/miharc/work/datasets/archive/arxiv-metadata-oai-snapshot.json
+
+load_n_clustering: 5000
+load_n_classifier: 10000
+n_train: 24
+force_k: null
+
+text_representation_cluster: hybrid
+text_representation_class: hybrid
+cluster_selection_mode: unsupervised
+
+seed: 42
+deterministic: true
+spacy_model: en_core_web_sm
