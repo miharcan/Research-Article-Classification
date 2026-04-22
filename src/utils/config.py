@@ -29,6 +29,10 @@ class AppConfig:
     spacy_model: str = "en_core_web_sm"
     seed: int = 42
     deterministic: bool = True
+    holdout_test_size: float = 0.2
+    holdout_val_size: float = 0.2
+    early_stopping_patience: int = 2
+    early_stopping_min_delta: float = 1e-4
     device: str = "cuda" if (torch is not None and torch.cuda.is_available()) else "cpu"
     embedding_models: dict[str, str] = field(
         default_factory=lambda: {
@@ -92,6 +96,18 @@ def _validate(cfg: AppConfig, require_dataset: bool) -> None:
     if cfg.force_k is not None and cfg.force_k < 2:
         raise ValueError("force_k must be >= 2 when provided.")
 
+    if not 0.0 < cfg.holdout_test_size < 1.0:
+        raise ValueError("holdout_test_size must be in (0, 1).")
+    if not 0.0 < cfg.holdout_val_size < 1.0:
+        raise ValueError("holdout_val_size must be in (0, 1).")
+    if cfg.holdout_test_size + cfg.holdout_val_size >= 1.0:
+        raise ValueError("holdout_test_size + holdout_val_size must be < 1.")
+
+    if cfg.early_stopping_patience < 0:
+        raise ValueError("early_stopping_patience must be >= 0.")
+    if cfg.early_stopping_min_delta < 0:
+        raise ValueError("early_stopping_min_delta must be >= 0.")
+
     if require_dataset and not Path(cfg.json_path).exists():
         raise FileNotFoundError(f"Dataset file not found: {cfg.json_path}")
 
@@ -140,6 +156,10 @@ TEXT_REPRESENTATION_CLASS = ""
 DEVICE = "cpu"
 SEED = 42
 DETERMINISTIC = True
+HOLDOUT_TEST_SIZE = 0.2
+HOLDOUT_VAL_SIZE = 0.2
+EARLY_STOPPING_PATIENCE = 2
+EARLY_STOPPING_MIN_DELTA = 1e-4
 nlp = None
 _NLP_MODEL_NAME = "en_core_web_sm"
 
@@ -150,7 +170,8 @@ def _apply_config(cfg: AppConfig) -> AppConfig:
     global EMBEDDING_MODELS, CLASSIFICATION_CANDIDATES, CLUSTER_METHODS
     global CLUSTER_SELECTION_MODE
     global TEXT_REPRESENTATION_CLUSTER, TEXT_REPRESENTATION_CLASS
-    global DEVICE, SEED, DETERMINISTIC, nlp, _NLP_MODEL_NAME
+    global DEVICE, SEED, DETERMINISTIC, HOLDOUT_TEST_SIZE, HOLDOUT_VAL_SIZE
+    global EARLY_STOPPING_PATIENCE, EARLY_STOPPING_MIN_DELTA, nlp, _NLP_MODEL_NAME
 
     _CURRENT_CONFIG = cfg
 
@@ -170,6 +191,10 @@ def _apply_config(cfg: AppConfig) -> AppConfig:
     DEVICE = cfg.device
     SEED = cfg.seed
     DETERMINISTIC = cfg.deterministic
+    HOLDOUT_TEST_SIZE = cfg.holdout_test_size
+    HOLDOUT_VAL_SIZE = cfg.holdout_val_size
+    EARLY_STOPPING_PATIENCE = cfg.early_stopping_patience
+    EARLY_STOPPING_MIN_DELTA = cfg.early_stopping_min_delta
 
     _NLP_MODEL_NAME = cfg.spacy_model
     nlp = None
@@ -198,9 +223,38 @@ def get_config() -> AppConfig:
 def get_nlp() -> Any:
     global nlp
     if nlp is None:
+        import logging
         import spacy
 
-        nlp = spacy.load(_NLP_MODEL_NAME)
+        try:
+            nlp = spacy.load(_NLP_MODEL_NAME)
+        except OSError:
+            fallback = "en_core_web_sm"
+            log = logging.getLogger("rac")
+            if _NLP_MODEL_NAME != fallback:
+                log.warning(
+                    "spaCy model '%s' not found. Falling back to '%s'.",
+                    _NLP_MODEL_NAME,
+                    fallback,
+                )
+                try:
+                    nlp = spacy.load(fallback)
+                except OSError:
+                    log.warning(
+                        "Fallback spaCy model '%s' also unavailable. Using blank 'en' pipeline.",
+                        fallback,
+                    )
+                    nlp = spacy.blank("en")
+                    if "sentencizer" not in nlp.pipe_names:
+                        nlp.add_pipe("sentencizer")
+            else:
+                log.warning(
+                    "spaCy model '%s' not found. Using blank 'en' pipeline.",
+                    _NLP_MODEL_NAME,
+                )
+                nlp = spacy.blank("en")
+                if "sentencizer" not in nlp.pipe_names:
+                    nlp.add_pipe("sentencizer")
     return nlp
 
 

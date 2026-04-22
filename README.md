@@ -27,20 +27,46 @@ python -m spacy download en_core_web_sm
 
 ## Reproducible Run
 
-Default config:
+Benchmark run:
 
 ```bash
-python src/main.py --config config/default.yaml
+python src/main.py --config config/benchmark.yaml
 ```
 
-Override key settings from CLI:
+Quick smoke run:
 
 ```bash
-python src/main.py abstract hybrid \
-  --config config/default.yaml \
-  --cluster-selection-mode unsupervised \
-  --seed 42
+python src/main.py --config config/smoke.yaml
 ```
+
+### Baseline Protocol
+
+- Use `config/benchmark.yaml` as the frozen research baseline for paper results.
+- Report metrics from the untouched holdout test split only.
+- Keep `seed: 42` and `deterministic: true` for comparable runs.
+- Use `config/smoke.yaml` only for fast sanity checks, not for reporting final results.
+
+Multi-seed benchmark for paper tables:
+
+```bash
+python src/run_benchmark_multiseed.py \
+  --config config/benchmark.yaml \
+  --seeds 40,41,42,43,44
+```
+
+List-based config sweep is supported for:
+- `text_representation_cluster`
+- `text_representation_class`
+- `cluster_selection_mode`
+
+The runner executes the Cartesian product of list values across seeds.
+
+Outputs are written under `results/benchmark_*/`:
+- `per_seed_summary.csv`
+- `clustering_comparison_long.csv`
+- `table_classification_holdout_aggregate.csv`
+- `table_clustering_by_embedding_algorithm.csv`
+- `runs/seed_<seed>.json` (raw structured run export)
 
 Notes:
 

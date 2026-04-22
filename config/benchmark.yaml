@@ -1,0 +1,37 @@
+json_path: /home/miharc/work/datasets/archive/arxiv-metadata-oai-snapshot.json
+
+# Full benchmark profile (slower, higher-fidelity than smoke).
+load_n_clustering: 5000
+load_n_classifier: 10000
+n_train: 24
+force_k: null
+
+text_representation_cluster: [abstract, triples, abstract_triples, hybrid]
+text_representation_class: [abstract, triples, abstract_triples, hybrid]
+cluster_selection_mode: [unsupervised]
+
+embedding_models:
+  MiniLM: sentence-transformers/all-MiniLM-L6-v2
+  MPNet: sentence-transformers/all-mpnet-base-v2
+  SciBERT: allenai/scibert_scivocab_uncased
+  SPECTER: sentence-transformers/allenai-specter
+
+classification_candidates:
+  - bert-base-uncased
+  - distilbert-base-uncased
+  - allenai/scibert_scivocab_uncased
+  - sentence-transformers/allenai-specter
+  - roberta-base
+
+cluster_methods:
+  - kmeans
+  - gmm
+  - hdbscan
+
+seed: 42
+deterministic: true
+spacy_model: en_core_web_sm
+holdout_test_size: 0.2
+holdout_val_size: 0.2
+early_stopping_patience: 2
+early_stopping_min_delta: 0.0001

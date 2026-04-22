@@ -7,26 +7,23 @@ from torch.utils.data import Dataset
 
 class ClusterDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len=128):
-        self.texts = texts
         self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_len = max_len
-
-    def __getitem__(self, idx):
-        text = self.texts[idx]
-        label = self.labels[idx]
-        enc = self.tokenizer(
-            text,
+        # Pre-tokenize once so we don't re-tokenize every sample each epoch.
+        self.encodings = tokenizer(
+            list(texts),
             truncation=True,
             padding="max_length",
-            max_length=self.max_len,
+            max_length=max_len,
             return_tensors="pt",
         )
+
+    def __getitem__(self, idx):
+        label = self.labels[idx]
         return {
-            "input_ids": enc["input_ids"].squeeze(),
-            "attention_mask": enc["attention_mask"].squeeze(),
+            "input_ids": self.encodings["input_ids"][idx],
+            "attention_mask": self.encodings["attention_mask"][idx],
             "labels": torch.tensor(label, dtype=torch.long),
         }
 
     def __len__(self):
-        return len(self.texts)
+        return len(self.labels)

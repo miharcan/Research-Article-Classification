@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 from utils.config import (
     ALLOWED_TEXT_REPRESENTATIONS,
@@ -42,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         help="unsupervised (label-free) or label_aware pipeline selection.",
     )
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--export-json",
+        default=None,
+        help="Optional path to export run summary JSON (for benchmark aggregation).",
+    )
     return parser.parse_args()
 
 
@@ -74,12 +81,13 @@ def main() -> None:
     from sklearn.preprocessing import LabelEncoder
     from models.tuning import run_hyperparameter_search
     from models.evaluation import analyze_clusters
-    from utils.logging_utils import logger, rebind_file_handler, log_path
+    from utils.logging_utils import logger, rebind_file_handler, log_path, log_protocol_metadata
     from models.text_selection import prepare_text_representations
 
     set_global_seed(cfg.seed, cfg.deterministic)
     logger.info("Starting pipeline with config: %s", cfg)
     logger.info("Reproducibility seed=%d deterministic=%s", cfg.seed, cfg.deterministic)
+    log_protocol_metadata(cfg)
 
     # 1) Data
     df_cluster, df_class = prepare_datasets()
@@ -120,6 +128,47 @@ def main() -> None:
     study = run_hyperparameter_search(df_class)
     logger.info("Best hyperparameters: %s", study.best_trial.params)
     logger.info("Done. Log file: %s", log_path)
+
+    if args.export_json:
+        export_path = Path(args.export_json)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "config": {
+                "json_path": cfg.json_path,
+                "load_n_clustering": cfg.load_n_clustering,
+                "load_n_classifier": cfg.load_n_classifier,
+                "n_train": cfg.n_train,
+                "force_k": cfg.force_k,
+                "text_representation_cluster": cfg.text_representation_cluster,
+                "text_representation_class": cfg.text_representation_class,
+                "cluster_selection_mode": cfg.cluster_selection_mode,
+                "seed": cfg.seed,
+                "deterministic": cfg.deterministic,
+                "spacy_model": cfg.spacy_model,
+                "holdout_test_size": cfg.holdout_test_size,
+                "holdout_val_size": cfg.holdout_val_size,
+                "early_stopping_patience": cfg.early_stopping_patience,
+                "early_stopping_min_delta": cfg.early_stopping_min_delta,
+                "device": cfg.device,
+                "embedding_models": cfg.embedding_models,
+                "classification_candidates": cfg.classification_candidates,
+                "cluster_methods": cfg.cluster_methods,
+            },
+            "best_k_kmeans": best_k_km,
+            "best_k_gmm": best_k_gmm,
+            "best_pipeline": best_pipeline,
+            "clustering_comparison": compare_df.to_dict(orient="records"),
+            "best_trial": {
+                "number": study.best_trial.number,
+                "value": study.best_value,
+                "params": study.best_trial.params,
+            },
+            "holdout_test_metrics": study.user_attrs.get("holdout_test_metrics", {}),
+            "log_path": str(log_path),
+        }
+        with export_path.open("w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, default=str)
+        logger.info("Exported run summary JSON: %s", export_path)
 
 
 if __name__ == "__main__":

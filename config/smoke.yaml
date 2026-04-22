@@ -1,0 +1,26 @@
+json_path: /home/miharc/work/datasets/archive/arxiv-metadata-oai-snapshot.json
+
+load_n_clustering: 50
+load_n_classifier: 100
+n_train: 1
+force_k: 8
+
+text_representation_cluster: [abstract, triples, abstract_triples, hybrid]
+text_representation_class: [abstract, triples, abstract_triples, hybrid]
+cluster_selection_mode: [unsupervised]
+
+# Keep smoke runs intentionally lightweight for quick end-to-end checks.
+embedding_models:
+  MiniLM: sentence-transformers/all-MiniLM-L6-v2
+classification_candidates:
+  - distilbert-base-uncased
+cluster_methods:
+  - kmeans
+
+seed: 42
+deterministic: true
+spacy_model: en_core_web_sm
+holdout_test_size: 0.2
+holdout_val_size: 0.2
+early_stopping_patience: 1
+early_stopping_min_delta: 0.0001

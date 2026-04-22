@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import os
 from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 from sklearn.preprocessing import normalize
@@ -12,6 +13,8 @@ from utils.config import (
 
 
 _embedding_cache = {}  # (subset_id, embedding_name) -> np.ndarray
+_st_model_cache = {}   # model_name -> SentenceTransformer
+_hf_model_cache = {}   # model_name -> (tokenizer, model)
 
 
 def get_embeddings(df, embedding_key, subset_id, texts_override=None):
@@ -100,7 +103,12 @@ def get_single_embedding(texts, embedding_key, subset_id):
     if embedding_key == "SciBERT":
         X = embed_scibert(texts)
     else:
-        mdl = SentenceTransformer(EMBEDDING_MODELS[embedding_key])
+        model_name = EMBEDDING_MODELS[embedding_key]
+        mdl = _st_model_cache.get(model_name)
+        if mdl is None:
+            local_only = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+            mdl = SentenceTransformer(model_name, local_files_only=local_only)
+            _st_model_cache[model_name] = mdl
         X = mdl.encode(texts, show_progress_bar=False).astype(np.float32)
 
     X_norm = normalize(X)
@@ -109,9 +117,15 @@ def get_single_embedding(texts, embedding_key, subset_id):
 
 
 def embed_scibert(texts, model_name="allenai/scibert_scivocab_uncased", batch_size=16):
-    tok = AutoTokenizer.from_pretrained(model_name)
-    mdl = AutoModel.from_pretrained(model_name).to(DEVICE)
-    mdl.eval()
+    cached = _hf_model_cache.get(model_name)
+    local_only = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+    if cached is None:
+        tok = AutoTokenizer.from_pretrained(model_name, local_files_only=local_only)
+        mdl = AutoModel.from_pretrained(model_name, local_files_only=local_only).to(DEVICE)
+        mdl.eval()
+        _hf_model_cache[model_name] = (tok, mdl)
+    else:
+        tok, mdl = cached
 
     outs = []
     for i in range(0, len(texts), batch_size):

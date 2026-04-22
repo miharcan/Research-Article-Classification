@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from data.preprocess import extract_triples
+from data.preprocess import extract_triples_batch
 from utils.config import (
     JSON_PATH,
     LOAD_N_CLASSIFIER,
@@ -124,16 +124,29 @@ def prepare_datasets() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     df_all = df_all.sample(frac=1.0, random_state=42).reset_index(drop=True)
     df_all["clean"] = df_all["abstract"].astype(str).apply(clean_text)
-    df_all["triples"] = df_all["abstract"].astype(str).apply(extract_triples)
-    df_all["abstract_triples"] = df_all.apply(
-        lambda row: build_augmented_text(
-            abstract=row["abstract"],
-            triples=row["triples"],
-            nodes=row.get("nodes", None),
-            edges=row.get("edges", None),
-        ),
-        axis=1,
+
+    needs_triples = (
+        TEXT_REPRESENTATION_CLUSTER in {"triples", "abstract_triples", "hybrid"}
+        or TEXT_REPRESENTATION_CLASS in {"triples", "abstract_triples", "hybrid"}
     )
+    if needs_triples:
+        # Batch NLP parsing is much faster than per-row apply.
+        logger.info("Extracting triples in batch...")
+        df_all["triples"] = extract_triples_batch(df_all["abstract"].astype(str).tolist())
+        df_all["abstract_triples"] = df_all.apply(
+            lambda row: build_augmented_text(
+                abstract=row["abstract"],
+                triples=row["triples"],
+                nodes=row.get("nodes", None),
+                edges=row.get("edges", None),
+            ),
+            axis=1,
+        )
+    else:
+        logger.info("Skipping triple extraction (not needed for selected text modes).")
+        df_all["triples"] = ""
+        df_all["abstract_triples"] = df_all["clean"]
+
     df_all["top_category"] = df_all["categories"].astype(str).apply(top_cat_from_categories)
 
     df_cluster = df_all.iloc[:LOAD_N_CLUSTERING].reset_index(drop=True)

@@ -125,14 +125,19 @@ def run_hdbscan(X, y):
         noise_frac = noise / len(labels)
         sil = silhouette_score(X, safe) if len(set(safe)) > 1 else None
 
-        if y is not None and CLUSTER_SELECTION_MODE == "label_aware":
+        # Always compute ARI/NMI for reporting if labels are available.
+        # Selection objective still depends on CLUSTER_SELECTION_MODE.
+        if y is not None:
             ari = adjusted_rand_score(y, safe)
             nmi = normalized_mutual_info_score(y, safe)
-            # composite score: reward NMI/ARI, penalize noise
-            score = nmi + 0.5 * ari - 0.5 * noise_frac
         else:
             ari = None
             nmi = None
+
+        if CLUSTER_SELECTION_MODE == "label_aware" and y is not None:
+            # composite score: reward NMI/ARI, penalize noise
+            score = nmi + 0.5 * ari - 0.5 * noise_frac
+        else:
             score = (sil if sil is not None else -1.0) - 0.5 * noise_frac
 
         row = dict(
@@ -163,7 +168,9 @@ def compare_embeddings_and_clusterers(df_cluster):
     texts = select_cluster_texts(df_cluster)
 
     label_aware = CLUSTER_SELECTION_MODE == "label_aware"
-    y = df_cluster["top_category"].tolist() if label_aware else None
+    # Keep labels available for ARI/NMI reporting in all modes.
+    # Selection logic remains controlled by CLUSTER_SELECTION_MODE.
+    y = df_cluster["top_category"].tolist()
     logger.info("Cluster selection mode: %s", CLUSTER_SELECTION_MODE)
 
     if FORCE_K is not None:

@@ -44,3 +44,6 @@ analysis/abstract_length_hist.png
 analysis/dataset_summary.json
 analysis/subcategories_counts.csv
 analysis/top_categories_counts.csv
+
+
+results/

@@ -83,13 +83,9 @@ def scibert_friendly_text(nodes, triples):
     return text
 
 
-def extract_triples(t: str):
-    t = " ".join(t.split("\n"))
+def _extract_triples_from_doc(doc):
     kg = nx.DiGraph()
-    if not t:
-        return kg
-    nlp = get_nlp()
-    doc = nlp(t)
+
     # add entities as nodes for clarity (if available)
     for ent in doc.ents:
         kg.add_node(ent.text, type=ent.label_)
@@ -124,6 +120,20 @@ def extract_triples(t: str):
     ###V2
     simple_triples = [(u, rel, v) for u, rel, v, _ in edge_attrs]
     string = scibert_friendly_text(kg.nodes, simple_triples)
-    # print(string)
-
     return string
+
+
+def extract_triples(t: str):
+    t = " ".join(t.split("\n"))
+    if not t:
+        return ""
+    nlp = get_nlp()
+    doc = nlp(t)
+    return _extract_triples_from_doc(doc)
+
+
+def extract_triples_batch(texts, batch_size: int = 32):
+    nlp = get_nlp()
+    cleaned = [" ".join(str(t).split("\n")) for t in texts]
+    docs = nlp.pipe(cleaned, batch_size=batch_size)
+    return [_extract_triples_from_doc(doc) for doc in docs]
